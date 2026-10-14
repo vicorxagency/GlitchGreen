@@ -58,9 +58,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n======================================================`);
-  console.log(`🌱 GLITCHXGREEN Backend Server running on http://localhost:${PORT}`);
-  console.log(`📡 Database mode: ${isSupabaseConfigured ? 'Supabase Cloud PostgreSQL' : 'Integrated Local Store (Seed Data)'}`);
-  console.log(`======================================================\n`);
-});
+// Export app for Vercel services / serverless deployment
+export default app;
+
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`\n======================================================`);
+    console.log(`🌱 GLITCHXGREEN Backend Server running on http://localhost:${PORT}`);
+    console.log(`📡 Database mode: ${isSupabaseConfigured ? 'Supabase Cloud PostgreSQL' : 'Integrated Local Store (Seed Data)'}`);
+    console.log(`======================================================\n`);
+  });
+}

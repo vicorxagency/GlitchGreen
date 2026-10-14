@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   TreePine,
   Layers,
-  Smartphone
+  Smartphone,
+  Globe
 } from 'lucide-react';
 
 const CAMPUS_LOCATIONS = [
@@ -48,11 +49,41 @@ export const GenerateQRModal = ({ isOpen, onClose }) => {
   const [posterTitle, setPosterTitle] = useState('Report Campus Environmental Hazard');
   const printRef = useRef(null);
 
+  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  // Vercel deployment link configuration
+  const [useVercelLink, setUseVercelLink] = useState(() => {
+    const saved = localStorage.getItem('glitchxgreen_qr_use_vercel');
+    return saved !== null ? saved === 'true' : isLocalhost;
+  });
+
+  const [vercelUrl, setVercelUrl] = useState(() => {
+    return localStorage.getItem('glitchxgreen_vercel_url') || import.meta.env.VITE_APP_URL || 'https://glitchgreen.vercel.app';
+  });
+
+  const handleVercelUrlChange = (val) => {
+    setVercelUrl(val);
+    localStorage.setItem('glitchxgreen_vercel_url', val);
+  };
+
+  const handleUseVercelToggle = (val) => {
+    setUseVercelLink(val);
+    localStorage.setItem('glitchxgreen_qr_use_vercel', String(val));
+  };
+
   // Determine active location string
   const activeLocation = selectedLocation === 'custom' ? customLocation : selectedLocation;
 
   // Build the direct scan URL
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  let baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  if (useVercelLink && vercelUrl.trim()) {
+    let cleaned = vercelUrl.trim().replace(/\/+$/, '');
+    if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
+      cleaned = `https://${cleaned}`;
+    }
+    baseUrl = cleaned;
+  }
+
   const queryParams = new URLSearchParams();
   queryParams.set('action', 'report');
   if (activeLocation.trim()) {
@@ -501,7 +532,83 @@ export const GenerateQRModal = ({ isOpen, onClose }) => {
               />
             </div>
 
-            {/* Step 4: Direct URL Display & Copy */}
+            {/* Step 4: QR Destination Domain (Vercel Production Link vs Localhost) */}
+            <div
+              style={{
+                background: '#ffffff',
+                border: '1.5px solid var(--border-emerald)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '0.85rem',
+                marginBottom: '1rem',
+                boxShadow: '0 2px 6px rgba(6, 78, 59, 0.04)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.875rem', fontWeight: 700, color: 'var(--forest-dark)', margin: 0 }}>
+                  <Globe size={15} style={{ color: 'var(--primary)' }} />
+                  QR Scan Destination Domain
+                </label>
+
+                <div style={{ display: 'flex', gap: '0.25rem', background: 'var(--surface-sage)', padding: '0.2rem', borderRadius: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleUseVercelToggle(true)}
+                    style={{
+                      border: 'none',
+                      borderRadius: '4px',
+                      padding: '0.25rem 0.55rem',
+                      fontSize: '0.725rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: useVercelLink ? 'var(--primary)' : 'transparent',
+                      color: useVercelLink ? '#ffffff' : 'var(--text-muted)'
+                    }}
+                  >
+                    ▲ Vercel Link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUseVercelToggle(false)}
+                    style={{
+                      border: 'none',
+                      borderRadius: '4px',
+                      padding: '0.25rem 0.55rem',
+                      fontSize: '0.725rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: !useVercelLink ? 'var(--primary)' : 'transparent',
+                      color: !useVercelLink ? '#ffffff' : 'var(--text-muted)'
+                    }}
+                  >
+                    Current Origin
+                  </button>
+                </div>
+              </div>
+
+              {useVercelLink ? (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="https://glitchgreen.vercel.app"
+                      value={vercelUrl}
+                      onChange={(e) => handleVercelUrlChange(e.target.value)}
+                      style={{ width: '100%', fontSize: '0.8rem', padding: '0.45rem 0.65rem' }}
+                    />
+                  </div>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--emerald)', marginTop: '0.35rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem', margin: '0.35rem 0 0' }}>
+                    <Check size={12} /> QR codes will open directly on your live Vercel deployment when scanned by mobile cameras.
+                  </p>
+                </div>
+              ) : (
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Using current window origin: <code>{typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'}</code>
+                </p>
+              )}
+            </div>
+
+            {/* Step 5: Direct URL Display & Copy */}
             <div
               style={{
                 background: 'var(--surface-sage)',
