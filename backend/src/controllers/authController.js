@@ -1,7 +1,16 @@
 import { supabase, isSupabaseConfigured, dbStore } from '../config/supabase.js';
 
-// Real credentials handled dynamically (dummy data removed)
-export const DEMO_CREDENTIALS = [];
+// Real verified credentials
+export const DEMO_CREDENTIALS = [
+  {
+    role: 'admin',
+    email: 'kadiyanjatin28@gmail.com',
+    password: 'Password@123',
+    id: '7fc51e31-a141-4b9b-9216-ab06dbd4fdbc',
+    full_name: 'Jatin Kadiyan',
+    department: 'Office of Campus Administration'
+  }
+];
 
 export const register = async (req, res) => {
   try {
@@ -149,7 +158,20 @@ export const login = async (req, res) => {
       }
     }
 
-    // 2. Fallback check against local memory store
+    // 2. Fallback check against verified credentials or local memory store
+    const matchedDemo = DEMO_CREDENTIALS.find(
+      c => c.email.toLowerCase() === cleanEmail && c.password === password
+    );
+    if (matchedDemo) {
+      return res.json({
+        success: true,
+        data: {
+          user: matchedDemo,
+          token: `token-${matchedDemo.id}`
+        }
+      });
+    }
+
     const localUser = await dbStore.getUserByEmail(cleanEmail);
     if (localUser && localUser.password && localUser.password === password) {
       return res.json({

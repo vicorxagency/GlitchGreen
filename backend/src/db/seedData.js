@@ -34,8 +34,19 @@ export const initialCategories = [
   }
 ];
 
-// All dummy users removed as requested - Clean real-world operational state
-export const initialUsers = [];
+// Verified Admin Account (all dummy demo data removed)
+export const initialUsers = [
+  {
+    id: '7fc51e31-a141-4b9b-9216-ab06dbd4fdbc',
+    email: 'kadiyanjatin28@gmail.com',
+    full_name: 'Jatin Kadiyan',
+    role: 'admin',
+    department: 'Office of Campus Administration',
+    avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=kadiyanjatin28%40gmail.com',
+    password: 'Password@123',
+    created_at: '2026-10-14T06:04:14.340937Z'
+  }
+];
 
 // All dummy reports removed as requested - Clean real-world operational state
 export const initialReports = [];

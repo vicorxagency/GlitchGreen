@@ -3,7 +3,17 @@ import { api } from '../services/api';
 
 const AuthContext = createContext();
 
-export const OFFICIAL_CREDENTIALS = [];
+export const OFFICIAL_CREDENTIALS = [
+  {
+    role: 'admin',
+    email: 'kadiyanjatin28@gmail.com',
+    password: 'Password@123',
+    id: '7fc51e31-a141-4b9b-9216-ab06dbd4fdbc',
+    full_name: 'Jatin Kadiyan',
+    department: 'Office of Campus Administration',
+    badge: 'Campus Administrator'
+  }
+];
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -22,14 +32,14 @@ export const AuthProvider = ({ children }) => {
         setDemoAccounts({
           student: res.data.defaults?.student || null,
           staff: res.data.defaults?.staff || null,
-          admin: res.data.defaults?.admin || null,
-          all: res.data.all || []
+          admin: res.data.defaults?.admin || OFFICIAL_CREDENTIALS[0],
+          all: res.data.all || OFFICIAL_CREDENTIALS
         });
 
         // Check if there is a saved user in localStorage
         const savedId = localStorage.getItem('glitchxgreen_user_id');
         if (savedId) {
-          const matched = (res.data.all || []).find(u => u.id === savedId);
+          const matched = (res.data.all || []).find(u => u.id === savedId) || OFFICIAL_CREDENTIALS.find(c => c.id === savedId);
           if (matched) {
             setCurrentUser(matched);
           } else {
@@ -41,7 +51,9 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (err) {
       console.error('Error loading accounts:', err);
-      setCurrentUser(null);
+      const savedId = localStorage.getItem('glitchxgreen_user_id');
+      const matched = OFFICIAL_CREDENTIALS.find(c => c.id === savedId);
+      setCurrentUser(matched || null);
     } finally {
       setLoading(false);
     }
