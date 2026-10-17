@@ -44,38 +44,62 @@ class LocalStore {
   async getUsers(role = null) {
     let list = [];
     if (isSupabaseConfigured) {
-      let query = supabase.from('profiles').select('*').order('created_at', { ascending: false });
-      if (role) query = query.eq('role', role);
-      const { data, error } = await query;
-      if (!error && data) {
-        list = data;
-      } else {
-        console.warn('Supabase profiles query error, using local data:', error?.message);
-        list = role ? this.users.filter(u => u.role === role) : this.users;
+      try {
+        const { data, error } = await supabase.auth.admin.listUsers();
+        if (!error && data?.users) {
+          list = data.users.map(u => ({
+            id: u.id,
+            email: u.email,
+            full_name: u.user_metadata?.full_name || u.email?.split('@')[0],
+            role: u.user_metadata?.role || 'student',
+            department: u.user_metadata?.department || 'Campus Community',
+            phone: u.user_metadata?.phone || '',
+            avatar_url: u.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(u.email)}`,
+            created_at: u.created_at
+          }));
+        } else {
+          // If profiles table happens to exist, fallback to query
+          const { data: profData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+          if (profData) list = profData;
+        }
+      } catch (err) {
+        console.warn('Supabase auth.admin.listUsers error:', err.message);
       }
-    } else {
-      list = role ? this.users.filter(u => u.role === role) : this.users;
     }
 
-    // Deduplicate users by email (case-insensitive) to prevent any duplicate accounts
-    const seenEmails = new Set();
-    const uniqueUsers = [];
-    for (const u of list) {
-      const emailLower = (u.email || '').trim().toLowerCase();
-      if (emailLower && !seenEmails.has(emailLower)) {
-        seenEmails.add(emailLower);
-        uniqueUsers.push(u);
-      } else if (!emailLower) {
-        uniqueUsers.push(u);
+    // Merge with any in-memory users that might not be in auth (deduplicate by email)
+    const combined = [...list];
+    for (const localU of this.users) {
+      if (!combined.some(u => u.email?.toLowerCase() === localU.email?.toLowerCase())) {
+        combined.push(localU);
       }
     }
-    return uniqueUsers;
+
+    const filtered = role ? combined.filter(u => u.role === role) : combined;
+    return filtered;
   }
 
   async getUserById(id) {
+    if (!id) return null;
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
-      if (!error && data) return data;
+      try {
+        const { data, error } = await supabase.auth.admin.getUserById(id);
+        if (!error && data?.user) {
+          const u = data.user;
+          return {
+            id: u.id,
+            email: u.email,
+            full_name: u.user_metadata?.full_name || u.email?.split('@')[0],
+            role: u.user_metadata?.role || 'student',
+            department: u.user_metadata?.department || 'Campus Community',
+            phone: u.user_metadata?.phone || '',
+            avatar_url: u.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(u.email)}`,
+            created_at: u.created_at
+          };
+        }
+      } catch (e) {
+        // silent fallback
+      }
     }
     return this.users.find(u => u.id === id) || null;
   }
@@ -84,12 +108,26 @@ class LocalStore {
     if (!email) return null;
     const cleanEmail = email.trim().toLowerCase();
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .ilike('email', cleanEmail)
-        .maybeSingle();
-      if (!error && data) return data;
+      try {
+        const { data, error } = await supabase.auth.admin.listUsers();
+        if (!error && data?.users) {
+          const u = data.users.find(usr => usr.email && usr.email.trim().toLowerCase() === cleanEmail);
+          if (u) {
+            return {
+              id: u.id,
+              email: u.email,
+              full_name: u.user_metadata?.full_name || u.email?.split('@')[0],
+              role: u.user_metadata?.role || 'student',
+              department: u.user_metadata?.department || 'Campus Community',
+              phone: u.user_metadata?.phone || '',
+              avatar_url: u.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(u.email)}`,
+              created_at: u.created_at
+            };
+          }
+        }
+      } catch (e) {
+        // silent fallback
+      }
     }
     return this.users.find(u => u.email && u.email.trim().toLowerCase() === cleanEmail) || null;
   }
@@ -108,26 +146,39 @@ class LocalStore {
       throw err;
     }
 
+    let authUser = null;
+    if (isSupabaseConfigured) {
+      const passwordToUse = userData.password || 'Campus@123';
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: cleanEmail,
+        password: passwordToUse,
+        email_confirm: true,
+        user_metadata: {
+          full_name: userData.full_name || userData.name,
+          role: userData.role || 'student',
+          department: userData.department || 'Campus Community',
+          phone: userData.phone || '',
+          avatar_url: userData.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanEmail)}`
+        }
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      authUser = data?.user;
+    }
+
     const newUser = {
-      id: userData.id || `usr-${Date.now()}`,
+      id: authUser?.id || userData.id || `usr-${Date.now()}`,
       email: cleanEmail,
       full_name: userData.full_name || userData.name,
       role: userData.role || 'student',
       department: userData.department || 'Campus Community',
       avatar_url: userData.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanEmail)}`,
       phone: userData.phone || '',
+      password: userData.password,
       created_at: new Date().toISOString()
     };
 
-    if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('profiles').insert([newUser]).select().single();
-      if (!error && data) {
-        this.users = this.users.filter(u => u.email?.toLowerCase() !== cleanEmail);
-        this.users.unshift(data);
-        return data;
-      }
-      console.warn('Supabase insert profile error, keeping in local store:', error?.message);
-    }
     this.users = this.users.filter(u => u.email?.toLowerCase() !== cleanEmail);
     this.users.unshift(newUser);
     return newUser;
@@ -147,23 +198,26 @@ class LocalStore {
       department: userData.department || 'Campus Community',
       avatar_url: userData.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanEmail)}`,
       phone: userData.phone || '',
+      password: userData.password,
       created_at: userData.created_at || new Date().toISOString()
     };
 
-    // Update in local memory store: remove any conflicting entry by email or id, then add
     this.users = this.users.filter(u => u.email?.toLowerCase() !== cleanEmail && u.id !== userRecord.id);
     this.users.unshift(userRecord);
 
     if (isSupabaseConfigured) {
       try {
-        const { data, error } = await supabase.from('profiles').upsert([userRecord], { onConflict: 'email' }).select().single();
-        if (!error && data) {
-          this.users = this.users.filter(u => u.email?.toLowerCase() !== cleanEmail && u.id !== data.id);
-          this.users.unshift(data);
-          return data;
-        }
+        await supabase.auth.admin.updateUserById(userRecord.id, {
+          user_metadata: {
+            full_name: userRecord.full_name,
+            role: userRecord.role,
+            department: userRecord.department,
+            phone: userRecord.phone,
+            avatar_url: userRecord.avatar_url
+          }
+        });
       } catch (err) {
-        console.warn('Supabase profiles upsert notice:', err.message);
+        console.warn('Supabase auth user update notice:', err.message);
       }
     }
     return userRecord;
@@ -171,15 +225,66 @@ class LocalStore {
 
   async updateUserRole(id, newRole) {
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id).select().single();
-      if (!error && data) return data;
+      try {
+        await supabase.auth.admin.updateUserById(id, {
+          user_metadata: { role: newRole }
+        });
+      } catch (err) {
+        console.warn('Supabase update role error:', err.message);
+      }
     }
     const idx = this.users.findIndex(u => u.id === id);
     if (idx !== -1) {
       this.users[idx] = { ...this.users[idx], role: newRole };
       return this.users[idx];
     }
+    const user = await this.getUserById(id);
+    if (user) {
+      user.role = newRole;
+      this.users.unshift(user);
+      return user;
+    }
     return null;
+  }
+
+  async updateUserPassword(idOrEmail, newPassword) {
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+    let targetUser = await this.getUserByEmail(idOrEmail);
+    if (!targetUser) {
+      targetUser = await this.getUserById(idOrEmail);
+    }
+    if (!targetUser) {
+      throw new Error('No account found with this email or ID.');
+    }
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.auth.admin.updateUserById(targetUser.id, {
+        password: newPassword
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+    }
+
+    const localIdx = this.users.findIndex(u => u.id === targetUser.id || u.email?.toLowerCase() === targetUser.email?.toLowerCase());
+    if (localIdx !== -1) {
+      this.users[localIdx].password = newPassword;
+    }
+    return targetUser;
+  }
+
+  async deleteUser(id) {
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.auth.admin.deleteUser(id);
+      } catch (err) {
+        console.warn('Supabase delete user error:', err.message);
+      }
+    }
+    this.users = this.users.filter(u => u.id !== id);
+    return true;
   }
 
   // REPORTS

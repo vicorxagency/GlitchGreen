@@ -141,6 +141,14 @@ export const api = {
     return res.json();
   },
 
+  async deleteUser(id) {
+    const res = await fetch(`${API_BASE}/users/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return res.json();
+  },
+
   async getMetrics() {
     const res = await fetch(`${API_BASE}/users/metrics`, {
       headers: this.getHeaders()
@@ -163,6 +171,15 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData)
+    });
+    return res.json();
+  },
+
+  async resetPassword({ email, newPassword }) {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, newPassword })
     });
     return res.json();
   },

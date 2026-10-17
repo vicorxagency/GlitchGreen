@@ -1,32 +1,7 @@
 import { supabase, isSupabaseConfigured, dbStore } from '../config/supabase.js';
 
-// Official Credential Information for Graphic Era Roles
-export const DEMO_CREDENTIALS = [
-  {
-    role: 'student',
-    email: 'student@graphicera.ac.in',
-    password: 'Password@123',
-    id: 'ca54d1c2-02a3-4233-92b6-7a43a8364ba1',
-    full_name: 'Alex Rivera',
-    department: 'Computer Science & Engineering'
-  },
-  {
-    role: 'staff',
-    email: 'staff@graphicera.ac.in',
-    password: 'Password@123',
-    id: '4150a9ae-d9c0-4848-8168-f86b99749a20',
-    full_name: 'Marcus Vance',
-    department: 'Campus Facilities & Sanitation'
-  },
-  {
-    role: 'admin',
-    email: 'admin@graphicera.ac.in',
-    password: 'Password@123',
-    id: '637117f6-c84f-415b-b3ba-96a08b8847ba',
-    full_name: 'Dr. Evelyn Hayes',
-    department: 'Office of Campus Sustainability'
-  }
-];
+// Real credentials handled dynamically (dummy data removed)
+export const DEMO_CREDENTIALS = [];
 
 export const register = async (req, res) => {
   try {
@@ -92,7 +67,7 @@ export const register = async (req, res) => {
 
       // Authenticate to obtain active session
       const { data: sessionData } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password
       });
 
@@ -107,6 +82,7 @@ export const register = async (req, res) => {
       role,
       department: department?.trim() || 'Campus Community',
       phone: phone?.trim() || '',
+      password,
       avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanEmail)}`
     });
 
@@ -173,26 +149,14 @@ export const login = async (req, res) => {
       }
     }
 
-    // 2. Fallback check against official demo credentials or local users
-    const matchedDemo = DEMO_CREDENTIALS.find(
-      c => c.email.toLowerCase() === cleanEmail && c.password === password
-    );
-
-    if (matchedDemo) {
-      const profile = (await dbStore.getUserById(matchedDemo.id)) || {
-        id: matchedDemo.id,
-        email: matchedDemo.email,
-        full_name: matchedDemo.full_name,
-        role: matchedDemo.role,
-        department: matchedDemo.department,
-        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanEmail)}`
-      };
-
+    // 2. Fallback check against local memory store
+    const localUser = await dbStore.getUserByEmail(cleanEmail);
+    if (localUser && localUser.password && localUser.password === password) {
       return res.json({
         success: true,
         data: {
-          user: profile,
-          token: `token-${profile.id}`
+          user: localUser,
+          token: `token-${localUser.id}`
         }
       });
     }
@@ -203,6 +167,46 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide both campus email and your new password.'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 6 characters long.'
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await dbStore.getUserByEmail(cleanEmail);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: `No user account found with email "${cleanEmail}".`
+      });
+    }
+
+    await dbStore.updateUserPassword(user.id, newPassword);
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully! You can now log in with your new password.'
+    });
+  } catch (error) {
+    console.error('Password reset error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -222,9 +226,9 @@ export const getCurrentUser = async (req, res) => {
 export const getDemoAccounts = async (req, res) => {
   try {
     const users = await dbStore.getUsers();
-    const student = users.find(u => u.role === 'student') || DEMO_CREDENTIALS[0];
-    const staff = users.find(u => u.role === 'staff') || DEMO_CREDENTIALS[1];
-    const admin = users.find(u => u.role === 'admin') || DEMO_CREDENTIALS[2];
+    const student = users.find(u => u.role === 'student') || null;
+    const staff = users.find(u => u.role === 'staff') || null;
+    const admin = users.find(u => u.role === 'admin') || null;
 
     res.json({
       success: true,
@@ -235,7 +239,7 @@ export const getDemoAccounts = async (req, res) => {
           staff,
           admin
         },
-        credentials: DEMO_CREDENTIALS
+        credentials: []
       }
     });
   } catch (error) {

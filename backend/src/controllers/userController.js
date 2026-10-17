@@ -17,10 +17,14 @@ export const getUsers = async (req, res) => {
 
 export const createUser = async (req, res) => {
   try {
-    const { email, full_name, role, department, phone, avatar_url } = req.body;
+    const { email, full_name, role, department, phone, avatar_url, password } = req.body;
 
     if (!email || !full_name) {
       return res.status(400).json({ success: false, error: 'Email and full_name are required' });
+    }
+
+    if (password && password.length < 6) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
@@ -38,12 +42,13 @@ export const createUser = async (req, res) => {
       role: role || 'student',
       department,
       phone,
-      avatar_url
+      avatar_url,
+      password: password || 'Campus@123'
     });
 
     res.status(201).json({
       success: true,
-      message: `User ${full_name} created as ${newUser.role}`,
+      message: `User ${full_name} created successfully as ${newUser.role}`,
       data: newUser
     });
   } catch (error) {
@@ -51,6 +56,20 @@ export const createUser = async (req, res) => {
     if (error.code === 'EMAIL_EXISTS') {
       return res.status(409).json({ success: false, error: error.message });
     }
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await dbStore.deleteUser(id);
+    res.json({
+      success: true,
+      message: 'User account removed successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting user:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

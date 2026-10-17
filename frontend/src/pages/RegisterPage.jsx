@@ -158,7 +158,7 @@ export const RegisterPage = ({
               <input
                 type="text"
                 className="form-input auth-input"
-                placeholder="e.g., Alex Rivera"
+                placeholder="e.g., Samuel Green"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required

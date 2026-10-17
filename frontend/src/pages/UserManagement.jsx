@@ -1,10 +1,21 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { RoleBadge } from '../components/RoleBadge';
-import { Users, UserPlus, Shield, Check, AlertCircle, Sparkles } from 'lucide-react';
+import {
+  Users,
+  UserPlus,
+  Shield,
+  Check,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Trash2,
+  KeyRound,
+  RotateCw
+} from 'lucide-react';
 import { api } from '../services/api';
 
-export const UserManagement = ({ users, onRefreshUsers }) => {
+export const UserManagement = ({ users = [], onRefreshUsers }) => {
   const { currentUser } = useAuth();
   const [filterRole, setFilterRole] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -12,18 +23,22 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
   // New User Form State
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showModalPassword, setShowModalPassword] = useState(false);
   const [newRole, setNewRole] = useState('staff');
   const [newDept, setNewDept] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState({ text: '', type: '' });
   const [modalError, setModalError] = useState('');
 
+  const safeUsers = Array.isArray(users) ? users : [];
+
   const handleRoleChange = async (userId, targetRole) => {
     try {
       const res = await api.updateUserRole(userId, targetRole);
       if (res.success) {
         setMsg({ text: `Role updated to ${targetRole} successfully.`, type: 'success' });
-        onRefreshUsers();
+        if (onRefreshUsers) onRefreshUsers();
       } else {
         setMsg({ text: res.error || 'Failed to update user role', type: 'error' });
       }
@@ -33,13 +48,37 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
     }
   };
 
+  const handleDeleteUser = async (user) => {
+    if (!user || user.id === currentUser?.id) return;
+    const confirmed = window.confirm(`Are you sure you want to remove user "${user.full_name}" (${user.email})? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      const res = await api.deleteUser(user.id);
+      if (res.success) {
+        setMsg({ text: `User ${user.full_name} removed successfully.`, type: 'success' });
+        if (onRefreshUsers) onRefreshUsers();
+      } else {
+        setMsg({ text: res.error || 'Failed to remove user account', type: 'error' });
+      }
+    } catch (err) {
+      console.error(err);
+      setMsg({ text: 'Server error removing user', type: 'error' });
+    }
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setModalError('');
     if (!newEmail || !newName) return;
 
+    if (!newPassword || newPassword.length < 6) {
+      setModalError('Please enter a password with at least 6 characters.');
+      return;
+    }
+
     const cleanEmail = newEmail.trim().toLowerCase();
-    if (users && users.some(u => u.email && u.email.trim().toLowerCase() === cleanEmail)) {
+    if (safeUsers.some(u => u.email && u.email.trim().toLowerCase() === cleanEmail)) {
       setModalError(`An account with email "${cleanEmail}" already exists. Each user must have a unique email address.`);
       return;
     }
@@ -52,17 +91,19 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
         email: cleanEmail,
         full_name: newName.trim(),
         role: newRole,
-        department: newDept || (newRole === 'staff' ? 'Campus Facilities Team' : 'Academic Dept.')
+        password: newPassword,
+        department: newDept || (newRole === 'staff' ? 'Campus Facilities Team' : newRole === 'admin' ? 'Campus Administration' : 'Student Body')
       });
 
       if (res.success) {
-        setMsg({ text: `User ${newName} created successfully as ${newRole}.`, type: 'success' });
+        setMsg({ text: `User ${newName} created successfully as ${newRole}. Password has been set.`, type: 'success' });
         setShowAddModal(false);
         setNewEmail('');
         setNewName('');
+        setNewPassword('');
         setNewDept('');
         setModalError('');
-        onRefreshUsers();
+        if (onRefreshUsers) onRefreshUsers();
       } else {
         setModalError(res.error || 'Failed to create user');
       }
@@ -76,14 +117,14 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
   // Deduplicate users list by email so each email has strictly one account
   const uniqueUsersList = React.useMemo(() => {
     const seen = new Set();
-    return (users || []).filter(u => {
+    return safeUsers.filter(u => {
       const em = (u.email || '').trim().toLowerCase();
       if (!em) return true;
       if (seen.has(em)) return false;
       seen.add(em);
       return true;
     });
-  }, [users]);
+  }, [safeUsers]);
 
   const filteredUsers = filterRole === 'all'
     ? uniqueUsersList
@@ -95,14 +136,22 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
         <div>
           <h1 style={{ fontSize: '1.5rem', color: 'var(--forest-dark)' }}>GLITCHX<span style={{ color: '#059669' }}>GREEN</span> User & Role Directory</h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-            Admin privileges: View and manage user accounts, assign roles (Student, Staff, Admin), and onboard campus staff.
+            Admin privileges: View and manage user accounts, assign roles (Student, Staff, Admin), set passwords, and onboard campus staff.
           </p>
         </div>
 
-        <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-          <UserPlus size={16} />
-          Create New User
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          {onRefreshUsers && (
+            <button className="btn btn-outline" onClick={onRefreshUsers} title="Refresh directory">
+              <RotateCw size={15} />
+              <span>Refresh</span>
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+            <UserPlus size={16} />
+            Create New User
+          </button>
+        </div>
       </div>
 
       {msg.text && (
@@ -124,12 +173,12 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
       )}
 
       {/* Role Filters */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
         {[
-          { id: 'all', label: `All Users (${users.length})` },
-          { id: 'student', label: `Students (${users.filter(u => u.role === 'student').length})` },
-          { id: 'staff', label: `Campus Staff (${users.filter(u => u.role === 'staff').length})` },
-          { id: 'admin', label: `Admins (${users.filter(u => u.role === 'admin').length})` }
+          { id: 'all', label: `All Users (${uniqueUsersList.length})` },
+          { id: 'student', label: `Students (${uniqueUsersList.filter(u => u.role === 'student').length})` },
+          { id: 'staff', label: `Campus Staff (${uniqueUsersList.filter(u => u.role === 'staff').length})` },
+          { id: 'admin', label: `Admins (${uniqueUsersList.filter(u => u.role === 'admin').length})` }
         ].map(btn => (
           <button
             key={btn.id}
@@ -151,44 +200,70 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
               <th>Department / Campus Affiliation</th>
               <th>Current Role</th>
               <th>Change Role</th>
+              <th style={{ textAlign: 'center' }}>Action</th>
             </tr>
           </thead>
           <tbody>
-            {filteredUsers.map((u) => (
-              <tr key={u.id}>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <img
-                      src={u.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                      alt={u.full_name}
-                      style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border-emerald)' }}
-                    />
-                    <div>
-                      <div style={{ fontWeight: 700, color: 'var(--forest-surface)' }}>{u.full_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>ID: {u.id}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>{u.email}</td>
-                <td>{u.department || 'General Campus'}</td>
-                <td>
-                  <RoleBadge role={u.role} />
-                </td>
-                <td>
-                  <select
-                    className="form-select"
-                    value={u.role}
-                    onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                    style={{ fontSize: '0.8125rem', padding: '0.35rem 0.65rem' }}
-                    disabled={u.id === currentUser?.id}
-                  >
-                    <option value="student">Student</option>
-                    <option value="staff">Campus Staff</option>
-                    <option value="admin">Administrator</option>
-                  </select>
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
+                  <Users size={32} style={{ color: 'var(--text-dim)', marginBottom: '0.5rem' }} />
+                  <div style={{ fontWeight: 600, fontSize: '0.9375rem' }}>No users found in this category</div>
+                  <div style={{ fontSize: '0.8125rem' }}>Click &quot;Create New User&quot; above to onboard users with custom credentials.</div>
                 </td>
               </tr>
-            ))}
+            ) : (
+              filteredUsers.map((u) => (
+                <tr key={u.id}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <img
+                        src={u.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(u.email || u.id)}`}
+                        alt={u.full_name}
+                        style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border-emerald)' }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 700, color: 'var(--forest-surface)' }}>
+                          {u.full_name} {u.id === currentUser?.id && <span style={{ fontSize: '0.7rem', color: 'var(--emerald)', fontWeight: 800 }}>(You)</span>}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>ID: {u.id.substring(0, 14)}...</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{u.email}</td>
+                  <td>{u.department || 'General Campus'}</td>
+                  <td>
+                    <RoleBadge role={u.role} />
+                  </td>
+                  <td>
+                    <select
+                      className="form-select"
+                      value={u.role}
+                      onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                      style={{ fontSize: '0.8125rem', padding: '0.35rem 0.65rem' }}
+                      disabled={u.id === currentUser?.id}
+                    >
+                      <option value="student">Student</option>
+                      <option value="staff">Campus Staff</option>
+                      <option value="admin">Administrator</option>
+                    </select>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {u.id !== currentUser?.id && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline"
+                        style={{ color: '#dc2626', borderColor: '#fca5a5', padding: '0.3rem 0.5rem' }}
+                        onClick={() => handleDeleteUser(u)}
+                        title={`Remove user ${u.full_name}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -196,18 +271,20 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
       {/* Create User Modal */}
       {showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
             <div className="modal-header">
-              <h2 style={{ fontSize: '1.25rem', color: 'var(--forest-dark)' }}>Add New Campus User</h2>
-              <button onClick={() => setShowAddModal(false)} style={{ color: 'var(--text-dim)' }}>✕</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <UserPlus size={20} style={{ color: 'var(--emerald)' }} />
+                <h2 style={{ fontSize: '1.25rem', color: 'var(--forest-dark)', margin: 0 }}>Add New Campus User</h2>
+              </div>
+              <button onClick={() => setShowAddModal(false)} style={{ color: 'var(--text-dim)', background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer' }}>✕</button>
             </div>
             <form onSubmit={handleCreateUser}>
-              <div className="modal-body">
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {modalError && (
                   <div style={{
                     padding: '0.75rem 1rem',
                     borderRadius: '8px',
-                    marginBottom: '1rem',
                     fontSize: '0.8125rem',
                     display: 'flex',
                     alignItems: 'center',
@@ -220,7 +297,7 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
                     <span>{modalError}</span>
                   </div>
                 )}
-                <div className="form-group">
+                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">Full Name *</label>
                   <input
                     type="text"
@@ -232,7 +309,7 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
                   />
                 </div>
 
-                <div className="form-group">
+                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">Email Address *</label>
                   <input
                     type="email"
@@ -244,7 +321,44 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
                   />
                 </div>
 
-                <div className="form-group">
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Set Account Password *</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showModalPassword ? 'text' : 'password'}
+                      className="form-input"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter initial password (min. 6 characters)"
+                      minLength={6}
+                      required
+                      style={{ paddingRight: '2.5rem' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowModalPassword(!showModalPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '0.75rem',
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: 0
+                      }}
+                      tabIndex={-1}
+                    >
+                      {showModalPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <small style={{ color: 'var(--text-dim)', fontSize: '0.75rem', marginTop: '0.25rem', display: 'block' }}>
+                    The user will use this password along with their email to log in immediately.
+                  </small>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">Assign Role *</label>
                   <select
                     className="form-select"
@@ -257,7 +371,7 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
                   </select>
                 </div>
 
-                <div className="form-group">
+                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">Department / Unit</label>
                   <input
                     type="text"
@@ -269,7 +383,7 @@ export const UserManagement = ({ users, onRefreshUsers }) => {
                 </div>
               </div>
 
-              <div className="modal-footer">
+              <div className="modal-footer" style={{ marginTop: '1.25rem' }}>
                 <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>
                   Cancel
                 </button>

@@ -57,7 +57,7 @@ export const AdminDashboard = ({
             GLITCHXGREEN Executive Command & Oversight
           </div>
           <h1 style={{ fontSize: '2rem', color: '#ffffff', marginBottom: '0.5rem', fontWeight: 900 }}>
-            {currentUser?.full_name || 'Dr. Evelyn Hayes'}
+            {currentUser?.full_name || 'Campus Administrator'}
           </h1>
           <p style={{ fontSize: '0.9375rem', color: '#d1fae5', lineHeight: 1.55 }}>
             Office of Campus Sustainability & Facilities Governance. Full access to GLITCHXGREEN user management, staff workload oversight, and campus sustainability KPIs.
@@ -116,31 +116,37 @@ export const AdminDashboard = ({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {staffUsers.map((staff) => {
-              const assignedCount = reports.filter(r => r.assigned_to === staff.id && r.status !== 'Resolved').length;
-              const completedCount = reports.filter(r => r.assigned_to === staff.id && r.status === 'Resolved').length;
+            {staffUsers.length === 0 ? (
+              <div style={{ padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem', background: 'var(--canvas-secondary)', borderRadius: 'var(--radius-md)' }}>
+                No active campus staff accounts registered yet. Use the User Directory to onboard team members.
+              </div>
+            ) : (
+              staffUsers.map((staff) => {
+                const assignedCount = reports.filter(r => r.assigned_to === staff.id && r.status !== 'Resolved').length;
+                const completedCount = reports.filter(r => r.assigned_to === staff.id && r.status === 'Resolved').length;
 
-              return (
-                <div key={staff.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--canvas-secondary)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <img src={staff.avatar_url} alt={staff.full_name} style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} />
-                    <div>
-                      <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--forest-surface)' }}>{staff.full_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{staff.department}</div>
+                return (
+                  <div key={staff.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--canvas-secondary)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <img src={staff.avatar_url} alt={staff.full_name} style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} />
+                      <div>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--forest-surface)' }}>{staff.full_name}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{staff.department}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--primary)' }}>
+                        {assignedCount} active
+                      </div>
+                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-dim)' }}>
+                        {completedCount} resolved
+                      </div>
                     </div>
                   </div>
-
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--primary)' }}>
-                      {assignedCount} active
-                    </div>
-                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-dim)' }}>
-                      {completedCount} resolved
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
 

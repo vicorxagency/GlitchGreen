@@ -3,35 +3,7 @@ import { api } from '../services/api';
 
 const AuthContext = createContext();
 
-export const OFFICIAL_CREDENTIALS = [
-  {
-    role: 'student',
-    email: 'student@graphicera.ac.in',
-    password: 'Password@123',
-    id: 'ca54d1c2-02a3-4233-92b6-7a43a8364ba1',
-    full_name: 'Alex Rivera',
-    department: 'Computer Science & Engineering',
-    badge: 'Student Reporter'
-  },
-  {
-    role: 'staff',
-    email: 'staff@graphicera.ac.in',
-    password: 'Password@123',
-    id: '4150a9ae-d9c0-4848-8168-f86b99749a20',
-    full_name: 'Marcus Vance',
-    department: 'Campus Facilities & Sanitation',
-    badge: 'Facilities Operations'
-  },
-  {
-    role: 'admin',
-    email: 'admin@graphicera.ac.in',
-    password: 'Password@123',
-    id: '637117f6-c84f-415b-b3ba-96a08b8847ba',
-    full_name: 'Dr. Evelyn Hayes',
-    department: 'Office of Campus Sustainability',
-    badge: 'Campus Administrator'
-  }
-];
+export const OFFICIAL_CREDENTIALS = [];
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -48,16 +20,16 @@ export const AuthProvider = ({ children }) => {
       const res = await api.getDemoAccounts();
       if (res.success && res.data) {
         setDemoAccounts({
-          student: res.data.defaults.student,
-          staff: res.data.defaults.staff,
-          admin: res.data.defaults.admin,
+          student: res.data.defaults?.student || null,
+          staff: res.data.defaults?.staff || null,
+          admin: res.data.defaults?.admin || null,
           all: res.data.all || []
         });
 
         // Check if there is a saved user in localStorage
         const savedId = localStorage.getItem('glitchxgreen_user_id');
         if (savedId) {
-          const matched = (res.data.all || []).find(u => u.id === savedId) || OFFICIAL_CREDENTIALS.find(c => c.id === savedId);
+          const matched = (res.data.all || []).find(u => u.id === savedId);
           if (matched) {
             setCurrentUser(matched);
           } else {
@@ -69,9 +41,7 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (err) {
       console.error('Error loading accounts:', err);
-      const savedId = localStorage.getItem('glitchxgreen_user_id');
-      const matched = OFFICIAL_CREDENTIALS.find(c => c.id === savedId);
-      setCurrentUser(matched || null);
+      setCurrentUser(null);
     } finally {
       setLoading(false);
     }
@@ -92,6 +62,7 @@ export const AuthProvider = ({ children }) => {
         if (res.data.token) {
           localStorage.setItem('glitchxgreen_token', res.data.token);
         }
+        await fetchAccounts();
         return { success: true, user };
       }
       return { success: false, error: res.error || 'Login failed' };
@@ -120,6 +91,16 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Reset password handler
+  const resetPassword = async (email, newPassword) => {
+    try {
+      const res = await api.resetPassword({ email, newPassword });
+      return res;
+    } catch (err) {
+      return { success: false, error: err.message || 'Password reset error' };
+    }
+  };
+
   // Logout handler
   const logout = () => {
     localStorage.removeItem('glitchxgreen_token');
@@ -134,16 +115,13 @@ export const AuthProvider = ({ children }) => {
   };
 
   const switchRole = (roleName) => {
-    const cred = OFFICIAL_CREDENTIALS.find(c => c.role === roleName);
-    if (cred) {
-      switchUser(cred);
-      return;
-    }
     if (demoAccounts[roleName]) {
       switchUser(demoAccounts[roleName]);
-    } else {
-      const match = demoAccounts.all.find(u => u.role === roleName);
-      if (match) switchUser(match);
+      return;
+    }
+    const match = (demoAccounts.all || []).find(u => u.role === roleName);
+    if (match) {
+      switchUser(match);
     }
   };
 
@@ -153,9 +131,10 @@ export const AuthProvider = ({ children }) => {
         currentUser,
         role: currentUser?.role || null,
         demoAccounts,
-        credentials: OFFICIAL_CREDENTIALS,
+        credentials: [],
         login,
         register,
+        resetPassword,
         logout,
         switchUser,
         switchRole,

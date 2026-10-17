@@ -106,7 +106,7 @@ export const App = () => {
 
   useEffect(() => {
     refreshData();
-  }, [currentUser]);
+  }, [currentUser, activeTab]);
 
   // Handlers for state updates
   const handleReportCreated = (newReport) => {
