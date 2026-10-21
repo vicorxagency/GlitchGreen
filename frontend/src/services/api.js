@@ -18,13 +18,29 @@ export const api = {
     return headers;
   },
 
+  async handleResponse(res) {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return res.json();
+    }
+    const text = await res.text();
+    if (!res.ok) {
+      return { success: false, error: text || `Server request failed with status ${res.status}` };
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { success: true, message: text };
+    }
+  },
+
   // REPORTS
   async getReports(params = {}) {
     const query = new URLSearchParams(params).toString();
     const res = await fetch(`${API_BASE}/reports?${query}`, {
       headers: this.getHeaders()
     });
-    return res.json();
+    return this.handleResponse(res);
   },
 
   async getReportById(id) {
@@ -51,7 +67,7 @@ export const api = {
       headers: this.getHeaders(isFormData),
       body
     });
-    return res.json();
+    return this.handleResponse(res);
   },
 
   async updateReport(id, updates) {
@@ -70,7 +86,7 @@ export const api = {
       headers: this.getHeaders(isFormData),
       body
     });
-    return res.json();
+    return this.handleResponse(res);
   },
 
   async assignReport(id, { assigned_to, priority, notes }) {

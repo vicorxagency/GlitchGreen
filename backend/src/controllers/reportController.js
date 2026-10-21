@@ -1,4 +1,5 @@
 import { dbStore } from '../config/supabase.js';
+import { processUploadedFile } from '../middleware/upload.js';
 
 export const getAllReports = async (req, res) => {
   try {
@@ -70,9 +71,9 @@ export const createReport = async (req, res) => {
       });
     }
 
-    let finalImageUrl = image_url;
+    let finalImageUrl = image_url || null;
     if (req.file) {
-      finalImageUrl = `/uploads/${req.file.filename}`;
+      finalImageUrl = await processUploadedFile(req.file);
     }
 
     const reporterId = req.user?.id || (reporter_name ? `guest-${Date.now()}` : 'guest-visitor');
@@ -122,8 +123,9 @@ export const updateReport = async (req, res) => {
 
     let finalResolutionImg = resolution_image_url || existing.resolution_image_url;
     if (req.file) {
-      finalResolutionImg = `/uploads/${req.file.filename}`;
+      finalResolutionImg = await processUploadedFile(req.file);
     }
+
 
     const updates = {};
     if (status) updates.status = status;

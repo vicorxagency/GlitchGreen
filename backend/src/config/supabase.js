@@ -307,7 +307,18 @@ class LocalStore {
       if (reported_by) query = query.eq('reported_by', reported_by);
 
       const { data, error } = await query;
-      if (!error && data) return data;
+      if (!error && data) {
+        return data.map(r => ({
+          ...r,
+          reporter: r.reporter || {
+            id: r.reported_by || 'guest',
+            full_name: r.reporter_name || 'Campus Community Member',
+            email: r.reporter_email || '',
+            role: 'guest',
+            avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(r.reporter_name || 'guest')}`
+          }
+        }));
+      }
       console.warn('Supabase reports fetch error, falling back to local store:', error?.message);
     }
 
@@ -381,6 +392,8 @@ class LocalStore {
     const randomTicket = Math.floor(1000 + Math.random() * 9000);
     const generatedId = reportData.id || `ECO-${currentYear}-${randomTicket}`;
 
+    const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+
     const newReport = {
       id: generatedId,
       title: reportData.title,
@@ -391,7 +404,7 @@ class LocalStore {
       status: 'Reported',
       priority: reportData.priority || 'Medium',
       reported_by: creatorId,
-      reporter_name: reportData.reporter_name || (creatorId.startsWith('usr-') ? null : 'Campus Community Guest'),
+      reporter_name: reportData.reporter_name || (creatorId?.startsWith?.('usr-') ? null : 'Campus Community Guest'),
       reporter_email: reportData.reporter_email || null,
       assigned_to: null,
       resolution_notes: null,
@@ -403,18 +416,35 @@ class LocalStore {
     };
 
     if (isSupabaseConfigured) {
-      const { data, error } = await supabase.from('reports').insert([newReport]).select().single();
-      if (!error && data) {
-        await this.addStatusLog({
-          report_id: data.id,
-          previous_status: null,
-          new_status: 'Reported',
-          changed_by: creatorId,
-          notes: reportData.reporter_name ? `Report filed by ${reportData.reporter_name}` : 'Report filed'
-        });
-        return data;
+      try {
+        const supabasePayload = {
+          ...newReport,
+          reported_by: isUUID(creatorId) ? creatorId : null
+        };
+        const { data, error } = await supabase.from('reports').insert([supabasePayload]).select().single();
+        if (!error && data) {
+          await this.addStatusLog({
+            report_id: data.id,
+            previous_status: null,
+            new_status: 'Reported',
+            changed_by: isUUID(creatorId) ? creatorId : null,
+            notes: reportData.reporter_name ? `Report filed by ${reportData.reporter_name}` : 'Report filed'
+          });
+          return {
+            ...data,
+            reporter: {
+              id: data.reported_by || 'guest',
+              full_name: data.reporter_name || reportData.reporter_name || 'Campus Community Guest',
+              email: data.reporter_email || reportData.reporter_email || '',
+              role: 'guest',
+              avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(data.reporter_name || 'guest')}`
+            }
+          };
+        }
+        console.warn('Supabase report insert notice, falling back to local memory store:', error?.message);
+      } catch (err) {
+        console.warn('Supabase report insert exception, falling back:', err.message);
       }
-      console.warn('Supabase report insert error, falling back to local memory store:', error?.message);
     }
 
     this.reports.unshift(newReport);
@@ -535,18 +565,27 @@ class LocalStore {
 
   // STATUS AUDIT LOGS
   async addStatusLog(logData) {
+    const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
     const entry = {
       id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       report_id: logData.report_id,
       previous_status: logData.previous_status || null,
       new_status: logData.new_status,
-      changed_by: logData.changed_by,
+      changed_by: logData.changed_by || null,
       notes: logData.notes || '',
       created_at: new Date().toISOString()
     };
 
     if (isSupabaseConfigured) {
-      await supabase.from('report_status_logs').insert([entry]);
+      try {
+        const supabaseLogEntry = {
+          ...entry,
+          changed_by: isUUID(entry.changed_by) ? entry.changed_by : null
+        };
+        await supabase.from('report_status_logs').insert([supabaseLogEntry]);
+      } catch (err) {
+        // silent fallback
+      }
     }
     this.statusLogs.unshift(entry);
     return entry;

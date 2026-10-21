@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
 
 -- 3. REPORTS TABLE
 CREATE TABLE IF NOT EXISTS public.reports (
-    id TEXT PRIMARY KEY, -- e.g., ECO-2024-001
+    id TEXT PRIMARY KEY, -- e.g., ECO-2026-1001
     title TEXT NOT NULL,
     description TEXT NOT NULL,
     category TEXT NOT NULL REFERENCES public.categories(id),
@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS public.reports (
     image_url TEXT,
     status TEXT NOT NULL DEFAULT 'Reported' CHECK (status IN ('Reported', 'Assigned', 'In Progress', 'Resolved')),
     priority TEXT NOT NULL DEFAULT 'Medium' CHECK (priority IN ('Low', 'Medium', 'High', 'Urgent')),
-    reported_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    reported_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    reporter_name TEXT,
+    reporter_email TEXT,
     assigned_to UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     resolution_notes TEXT,
     resolution_image_url TEXT,
@@ -50,11 +52,11 @@ CREATE TABLE IF NOT EXISTS public.reports (
 
 -- 4. REPORT STATUS AUDIT LOG TABLE
 CREATE TABLE IF NOT EXISTS public.report_status_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id TEXT PRIMARY KEY,
     report_id TEXT NOT NULL REFERENCES public.reports(id) ON DELETE CASCADE,
     previous_status TEXT,
     new_status TEXT NOT NULL,
-    changed_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    changed_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -98,14 +100,39 @@ ALTER TABLE public.report_status_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 
 -- Allow public read for prototyping & standard application service keys
+DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
 CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow insert profiles" ON public.profiles;
+CREATE POLICY "Allow insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow update profiles" ON public.profiles;
+CREATE POLICY "Allow update profiles" ON public.profiles FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Public reports are viewable by everyone" ON public.reports;
 CREATE POLICY "Public reports are viewable by everyone" ON public.reports FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow insert reports" ON public.reports;
+CREATE POLICY "Allow insert reports" ON public.reports FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow update reports" ON public.reports;
+CREATE POLICY "Allow update reports" ON public.reports FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Allow delete reports" ON public.reports;
+CREATE POLICY "Allow delete reports" ON public.reports FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Public categories are viewable by everyone" ON public.categories;
 CREATE POLICY "Public categories are viewable by everyone" ON public.categories FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public feedback is viewable by everyone" ON public.feedback;
 CREATE POLICY "Public feedback is viewable by everyone" ON public.feedback FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow insert feedback" ON public.feedback;
+CREATE POLICY "Allow insert feedback" ON public.feedback FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public status logs are viewable by everyone" ON public.report_status_logs;
 CREATE POLICY "Public status logs are viewable by everyone" ON public.report_status_logs FOR SELECT USING (true);
 
--- Allow authenticated or key holders to insert/update
-CREATE POLICY "Allow insert reports" ON public.reports FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow update reports" ON public.reports FOR UPDATE USING (true);
-CREATE POLICY "Allow insert feedback" ON public.feedback FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow insert logs" ON public.report_status_logs;
 CREATE POLICY "Allow insert logs" ON public.report_status_logs FOR INSERT WITH CHECK (true);
+

@@ -102,7 +102,7 @@ export const ReportDetailsModal = ({ report, isOpen, onClose, onOpenFeedback, on
             <div>
               <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase' }}>Reported By</div>
               <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--forest-surface)' }}>
-                {report.reporter?.full_name || 'Campus Reporter'}
+                {report.reporter?.full_name || report.reporter_name || 'Campus Reporter'}
               </div>
             </div>
 
