@@ -38,14 +38,15 @@ export const getAllReports = async (req, res) => {
 
 export const getReportById = async (req, res) => {
   try {
-    const { id } = req.params;
-    const report = await dbStore.getReportById(id);
+    const rawId = req.params.id || '';
+    const cleanId = decodeURIComponent(rawId).replace(/^#+/, '').trim();
+    const report = await dbStore.getReportById(cleanId);
 
     if (!report) {
       return res.status(404).json({ success: false, error: 'Report not found' });
     }
 
-    const statusLogs = await dbStore.getStatusLogs(id);
+    const statusLogs = await dbStore.getStatusLogs(report.id);
 
     res.json({
       success: true,

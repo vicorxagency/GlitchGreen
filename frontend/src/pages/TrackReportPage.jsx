@@ -58,7 +58,7 @@ export const TrackReportPage = ({
   // Search report by ID
   const handleSearch = async (idToSearch) => {
     const rawId = typeof idToSearch === 'string' ? idToSearch : (typeof trackIdInput === 'string' ? trackIdInput : '');
-    const cleanId = rawId.trim();
+    const cleanId = rawId.replace(/^#+/, '').trim();
     if (!cleanId) return;
 
     setLoading(true);
@@ -68,7 +68,7 @@ export const TrackReportPage = ({
     try {
       // 1. Try API fetch
       const res = await api.getReportById(cleanId);
-      if (res.success && res.data) {
+      if (res && res.success && res.data && !Array.isArray(res.data)) {
         setCurrentReport(res.data);
         setStatusLogs(res.data.statusLogs || []);
         setNotFound(false);
@@ -77,10 +77,16 @@ export const TrackReportPage = ({
       }
 
       // 2. Fallback search in passed reports list
-      const matched = reports.find(r => {
+      const matched = (reports || []).find(r => {
         const rid = (r.id || '').toUpperCase();
         const cid = cleanId.toUpperCase();
-        return rid === cid || rid.endsWith(`-${cid}`) || cid.endsWith(rid);
+        return (
+          rid === cid ||
+          rid.endsWith(`-${cid}`) ||
+          rid.endsWith(cid) ||
+          cid.endsWith(rid) ||
+          (cid.length >= 3 && rid.includes(cid))
+        );
       });
 
       if (matched) {
@@ -89,7 +95,11 @@ export const TrackReportPage = ({
         // fetch logs for matched
         try {
           const logsRes = await api.getStatusLogs(matched.id);
-          if (logsRes.success) setStatusLogs(logsRes.data || []);
+          if (logsRes && logsRes.success && Array.isArray(logsRes.data)) {
+            setStatusLogs(logsRes.data);
+          } else {
+            setStatusLogs([]);
+          }
         } catch (e) {
           setStatusLogs([]);
         }
@@ -101,7 +111,16 @@ export const TrackReportPage = ({
     } catch (err) {
       console.error('Error tracking report:', err);
       // Fallback in passed reports
-      const matched = reports.find(r => (r.id || '').toUpperCase() === cleanId.toUpperCase());
+      const matched = (reports || []).find(r => {
+        const rid = (r.id || '').toUpperCase();
+        const cid = cleanId.toUpperCase();
+        return (
+          rid === cid ||
+          rid.endsWith(`-${cid}`) ||
+          rid.endsWith(cid) ||
+          (cid.length >= 3 && rid.includes(cid))
+        );
+      });
       if (matched) {
         setCurrentReport(matched);
         setNotFound(false);

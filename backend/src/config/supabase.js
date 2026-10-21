@@ -38,6 +38,32 @@ class LocalStore {
     this.reports = [...initialReports];
     this.feedback = [...initialFeedback];
     this.statusLogs = [...initialStatusLogs];
+    if (isSupabaseConfigured) {
+      this.syncProfilesTable().catch(() => {});
+    }
+  }
+
+  async syncProfilesTable() {
+    if (!isSupabaseConfigured || !supabase) return;
+    try {
+      const { data, error } = await supabase.auth.admin.listUsers();
+      if (!error && data?.users) {
+        const payload = data.users.map(u => ({
+          id: u.id,
+          email: u.email,
+          full_name: u.user_metadata?.full_name || u.email?.split('@')[0],
+          role: u.user_metadata?.role || 'student',
+          department: u.user_metadata?.department || 'Campus Community',
+          phone: u.user_metadata?.phone || '',
+          avatar_url: u.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(u.email || u.id)}`
+        }));
+        if (payload.length > 0) {
+          await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
+        }
+      }
+    } catch (e) {
+      // non-fatal
+    }
   }
 
   // USERS
@@ -57,6 +83,7 @@ class LocalStore {
             avatar_url: u.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(u.email)}`,
             created_at: u.created_at
           }));
+          this.syncProfilesTable().catch(() => {});
         } else {
           // If profiles table happens to exist, fallback to query
           const { data: profData } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
@@ -165,6 +192,21 @@ class LocalStore {
         throw new Error(error.message);
       }
       authUser = data?.user;
+      if (authUser?.id) {
+        try {
+          await supabase.from('profiles').upsert([{
+            id: authUser.id,
+            email: cleanEmail,
+            full_name: userData.full_name || userData.name,
+            role: userData.role || 'student',
+            department: userData.department || 'Campus Community',
+            phone: userData.phone || '',
+            avatar_url: userData.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanEmail)}`
+          }], { onConflict: 'id' });
+        } catch (e) {
+          console.warn('Profiles upsert note:', e.message);
+        }
+      }
     }
 
     const newUser = {
@@ -216,6 +258,15 @@ class LocalStore {
             avatar_url: userRecord.avatar_url
           }
         });
+        await supabase.from('profiles').upsert([{
+          id: userRecord.id,
+          email: cleanEmail,
+          full_name: userRecord.full_name,
+          role: userRecord.role,
+          department: userRecord.department,
+          phone: userRecord.phone,
+          avatar_url: userRecord.avatar_url
+        }], { onConflict: 'id' });
       } catch (err) {
         console.warn('Supabase auth user update notice:', err.message);
       }
@@ -289,82 +340,141 @@ class LocalStore {
 
   // REPORTS
   async getReports({ status, category, priority, assigned_to, reported_by } = {}) {
+    let supabaseReports = [];
     if (isSupabaseConfigured) {
-      let query = supabase
-        .from('reports')
-        .select(`
-          *,
-          reporter:reported_by (id, full_name, email, avatar_url, role),
-          assignee:assigned_to (id, full_name, email, avatar_url, role),
-          feedback:feedback (*)
-        `)
-        .order('created_at', { ascending: false });
+      try {
+        let query = supabase
+          .from('reports')
+          .select(`
+            *,
+            reporter:reported_by (id, full_name, email, avatar_url, role),
+            assignee:assigned_to (id, full_name, email, avatar_url, role),
+            feedback:feedback (*)
+          `)
+          .order('created_at', { ascending: false });
 
-      if (status) query = query.eq('status', status);
-      if (category) query = query.eq('category', category);
-      if (priority) query = query.eq('priority', priority);
-      if (assigned_to) query = query.eq('assigned_to', assigned_to);
-      if (reported_by) query = query.eq('reported_by', reported_by);
+        if (status) query = query.eq('status', status);
+        if (category) query = query.eq('category', category);
+        if (priority) query = query.eq('priority', priority);
+        if (assigned_to) query = query.eq('assigned_to', assigned_to);
+        if (reported_by) query = query.eq('reported_by', reported_by);
 
-      const { data, error } = await query;
-      if (!error && data) {
-        return data.map(r => ({
-          ...r,
-          reporter: r.reporter || {
-            id: r.reported_by || 'guest',
-            full_name: r.reporter_name || 'Campus Community Member',
-            email: r.reporter_email || '',
-            role: 'guest',
-            avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(r.reporter_name || 'guest')}`
-          }
-        }));
+        const { data, error } = await query;
+        if (!error && data) {
+          supabaseReports = data.map(r => ({
+            ...r,
+            reporter: r.reporter || {
+              id: r.reported_by || 'guest',
+              full_name: r.reporter_name || 'Campus Community Member',
+              email: r.reporter_email || '',
+              role: 'guest',
+              avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(r.reporter_name || 'guest')}`
+            }
+          }));
+        } else if (error) {
+          console.warn('Supabase reports fetch error, falling back to local store:', error?.message);
+        }
+      } catch (err) {
+        console.warn('Supabase reports query exception:', err.message);
       }
-      console.warn('Supabase reports fetch error, falling back to local store:', error?.message);
     }
 
-    let results = [...this.reports];
-    if (status) results = results.filter(r => r.status.toLowerCase() === status.toLowerCase());
-    if (category) results = results.filter(r => r.category === category);
-    if (priority) results = results.filter(r => r.priority === priority);
-    if (assigned_to) results = results.filter(r => r.assigned_to === assigned_to);
-    if (reported_by) results = results.filter(r => r.reported_by === reported_by);
+    // Merge with any in-memory reports
+    let localFiltered = [...this.reports];
+    if (status) localFiltered = localFiltered.filter(r => r.status?.toLowerCase() === status.toLowerCase());
+    if (category) localFiltered = localFiltered.filter(r => r.category === category);
+    if (priority) localFiltered = localFiltered.filter(r => r.priority === priority);
+    if (assigned_to) localFiltered = localFiltered.filter(r => r.assigned_to === assigned_to);
+    if (reported_by) localFiltered = localFiltered.filter(r => r.reported_by === reported_by);
 
-    // Hydrate relations
-    return results.map(r => ({
+    const hydratedLocal = localFiltered.map(r => ({
       ...r,
-      reporter: this.users.find(u => u.id === r.reported_by) || null,
+      reporter: this.users.find(u => u.id === r.reported_by) || {
+        id: r.reported_by || 'guest',
+        full_name: r.reporter_name || 'Campus Community Guest',
+        email: r.reporter_email || '',
+        role: 'guest',
+        avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(r.reporter_name || 'guest')}`
+      },
       assignee: this.users.find(u => u.id === r.assigned_to) || null,
       feedback: this.feedback.find(f => f.report_id === r.id) || null
     }));
+
+    const combined = [...supabaseReports];
+    for (const lr of hydratedLocal) {
+      if (!combined.some(r => (r.id || '').toUpperCase() === (lr.id || '').toUpperCase())) {
+        combined.push(lr);
+      }
+    }
+
+    combined.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    return combined;
   }
 
   async getReportById(id) {
     if (!id) return null;
-    const cleanId = id.trim().toUpperCase();
+    const raw = String(id).trim();
+    // Strip leading hash symbols (e.g. #ECO-2026-1025 -> ECO-2026-1025)
+    const cleanId = raw.replace(/^#+/, '').trim().toUpperCase();
+    if (!cleanId) return null;
 
     if (isSupabaseConfigured) {
-      // 1. Try exact or ilike match in Supabase
-      const { data, error } = await supabase
-        .from('reports')
-        .select(`
-          *,
-          reporter:reported_by (id, full_name, email, avatar_url, role),
-          assignee:assigned_to (id, full_name, email, avatar_url, role),
-          feedback:feedback (*)
-        `)
-        .ilike('id', cleanId)
-        .maybeSingle();
+      try {
+        // 1. Try exact or ilike match in Supabase
+        let { data, error } = await supabase
+          .from('reports')
+          .select(`
+            *,
+            reporter:reported_by (id, full_name, email, avatar_url, role),
+            assignee:assigned_to (id, full_name, email, avatar_url, role),
+            feedback:feedback (*)
+          `)
+          .ilike('id', cleanId)
+          .maybeSingle();
 
-      if (!error && data) return data;
+        // 2. If not found, try matching by suffix or number (e.g. "1025" or "2026-1025")
+        if (!data) {
+          const { data: searchResults } = await supabase
+            .from('reports')
+            .select(`
+              *,
+              reporter:reported_by (id, full_name, email, avatar_url, role),
+              assignee:assigned_to (id, full_name, email, avatar_url, role),
+              feedback:feedback (*)
+            `)
+            .or(`id.ilike.%-${cleanId},id.ilike.%${cleanId}`)
+            .limit(1);
+
+          if (searchResults && searchResults.length > 0) {
+            data = searchResults[0];
+          }
+        }
+
+        if (data) {
+          return {
+            ...data,
+            reporter: data.reporter || {
+              id: data.reported_by || 'guest',
+              full_name: data.reporter_name || 'Campus Community Member',
+              email: data.reporter_email || '',
+              role: 'guest',
+              avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(data.reporter_name || 'guest')}`
+            }
+          };
+        }
+      } catch (err) {
+        console.warn('Supabase getReportById exception:', err.message);
+      }
     }
 
-    // 2. Search local memory store with flexible matching
+    // 3. Search local memory store with flexible matching
     const report = this.reports.find(r => {
       const rid = (r.id || '').toUpperCase();
       return (
         rid === cleanId ||
         rid.replace(/^ECO-\d+-/, '') === cleanId ||
         rid.endsWith(`-${cleanId}`) ||
+        rid.endsWith(cleanId) ||
         cleanId.endsWith(rid)
       );
     });
@@ -394,6 +504,9 @@ class LocalStore {
 
     const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
 
+    const reporterName = reportData.reporter_name || (creatorId?.startsWith?.('usr-') ? null : 'Campus Community Guest');
+    const reporterEmail = reportData.reporter_email || null;
+
     const newReport = {
       id: generatedId,
       title: reportData.title,
@@ -403,9 +516,9 @@ class LocalStore {
       image_url: reportData.image_url || null,
       status: 'Reported',
       priority: reportData.priority || 'Medium',
-      reported_by: creatorId,
-      reporter_name: reportData.reporter_name || (creatorId?.startsWith?.('usr-') ? null : 'Campus Community Guest'),
-      reporter_email: reportData.reporter_email || null,
+      reported_by: isUUID(creatorId) ? creatorId : null,
+      reporter_name: reporterName,
+      reporter_email: reporterEmail,
       assigned_to: null,
       resolution_notes: null,
       resolution_image_url: null,
@@ -417,11 +530,42 @@ class LocalStore {
 
     if (isSupabaseConfigured) {
       try {
-        const supabasePayload = {
-          ...newReport,
-          reported_by: isUUID(creatorId) ? creatorId : null
-        };
-        const { data, error } = await supabase.from('reports').insert([supabasePayload]).select().single();
+        // Ensure profile exists in profiles table if creatorId is a UUID to avoid foreign key errors
+        if (isUUID(creatorId)) {
+          const { data: existingProf } = await supabase.from('profiles').select('id').eq('id', creatorId).maybeSingle();
+          if (!existingProf) {
+            const userObj = await this.getUserById(creatorId);
+            if (userObj) {
+              await supabase.from('profiles').upsert([{
+                id: creatorId,
+                email: userObj.email,
+                full_name: userObj.full_name || reporterName,
+                role: userObj.role || 'student',
+                department: userObj.department || 'Campus Community',
+                phone: userObj.phone || '',
+                avatar_url: userObj.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userObj.email || creatorId)}`
+              }], { onConflict: 'id' });
+            }
+          }
+        }
+
+        let { data, error } = await supabase.from('reports').insert([newReport]).select().single();
+
+        // If insert failed due to foreign key or user relation, retry with reported_by = null so report is NEVER lost
+        if (error && newReport.reported_by) {
+          console.warn('Supabase insert with reported_by failed (' + error.message + '), retrying with null reported_by...');
+          const fallbackPayload = {
+            ...newReport,
+            reported_by: null,
+            reporter_name: reporterName || 'Campus Community Guest'
+          };
+          const retryRes = await supabase.from('reports').insert([fallbackPayload]).select().single();
+          if (!retryRes.error && retryRes.data) {
+            data = retryRes.data;
+            error = null;
+          }
+        }
+
         if (!error && data) {
           await this.addStatusLog({
             report_id: data.id,
@@ -430,6 +574,9 @@ class LocalStore {
             changed_by: isUUID(creatorId) ? creatorId : null,
             notes: reportData.reporter_name ? `Report filed by ${reportData.reporter_name}` : 'Report filed'
           });
+
+          this.reports.unshift(data);
+
           return {
             ...data,
             reporter: {
@@ -544,12 +691,12 @@ class LocalStore {
 
   async deleteReport(id) {
     if (!id) return false;
-    const cleanId = id.trim().toUpperCase();
+    const cleanId = String(id).replace(/^#+/, '').trim().toUpperCase();
 
     if (isSupabaseConfigured) {
       try {
         await supabase.from('feedback').delete().ilike('report_id', cleanId);
-        await supabase.from('status_logs').delete().ilike('report_id', cleanId);
+        await supabase.from('report_status_logs').delete().ilike('report_id', cleanId);
         const { error } = await supabase.from('reports').delete().ilike('id', cleanId);
         if (error) console.warn('Supabase delete report notice:', error.message);
       } catch (err) {

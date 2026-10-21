@@ -44,10 +44,11 @@ export const api = {
   },
 
   async getReportById(id) {
-    const res = await fetch(`${API_BASE}/reports/${id}`, {
+    const cleanId = String(id || '').replace(/^#+/, '').trim();
+    const res = await fetch(`${API_BASE}/reports/${encodeURIComponent(cleanId)}`, {
       headers: this.getHeaders()
     });
-    return res.json();
+    return this.handleResponse(res);
   },
 
   async createReport(formData) {
@@ -99,18 +100,20 @@ export const api = {
   },
 
   async getStatusLogs(reportId) {
-    const res = await fetch(`${API_BASE}/reports/${reportId}/logs`, {
+    const cleanId = String(reportId || '').replace(/^#+/, '').trim();
+    const res = await fetch(`${API_BASE}/reports/${encodeURIComponent(cleanId)}/logs`, {
       headers: this.getHeaders()
     });
-    return res.json();
+    return this.handleResponse(res);
   },
 
   async deleteReport(id) {
-    const res = await fetch(`${API_BASE}/reports/${id}`, {
+    const cleanId = String(id || '').replace(/^#+/, '').trim();
+    const res = await fetch(`${API_BASE}/reports/${encodeURIComponent(cleanId)}`, {
       method: 'DELETE',
       headers: this.getHeaders()
     });
-    return res.json();
+    return this.handleResponse(res);
   },
 
   // FEEDBACK

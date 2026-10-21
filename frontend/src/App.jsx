@@ -110,6 +110,9 @@ export const App = () => {
 
   // Handlers for state updates
   const handleReportCreated = (newReport) => {
+    if (newReport && newReport.id) {
+      setReports(prev => [newReport, ...prev.filter(r => r.id !== newReport.id)]);
+    }
     refreshData();
   };
 
